@@ -20,7 +20,7 @@ pip install -r requirements.txt
 3. Start the service (from `staff-service` folder):
 
 ```bash
-uvicorn app.main:app --reload --port 8005
+uvicorn app.main:app --reload --port 8085
 ```
 
 ## API Endpoints
