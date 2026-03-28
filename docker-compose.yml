@@ -1,0 +1,150 @@
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    container_name: warehouse-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-warehouse_db}
+      POSTGRES_USER: ${POSTGRES_USER:-warehouse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-warehouse}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-warehouse} -d ${POSTGRES_DB:-warehouse_db}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  cargo-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_DIR: cargo-service
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8081
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-warehouse}:${POSTGRES_PASSWORD:-warehouse}@${DB_HOST:-postgres}:5432/${POSTGRES_DB:-warehouse_db}
+      SUPPLIER_SERVICE_URL: ${SUPPLIER_SERVICE_URL:-http://supplier-service:8084}
+      LOCATION_SERVICE_URL: ${LOCATION_SERVICE_URL:-http://location-service:8082}
+      INVENTORY_SERVICE_URL: ${INVENTORY_SERVICE_URL:-http://inventory-service:8083}
+      STAFF_SERVICE_URL: ${STAFF_SERVICE_URL:-http://staff-service:8085}
+      EQUIPMENT_SERVICE_URL: ${EQUIPMENT_SERVICE_URL:-http://equipment-service:8086}
+      HEAVY_CARGO_THRESHOLD_KG: ${HEAVY_CARGO_THRESHOLD_KG:-1000}
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  location-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_DIR: location-service
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8082
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-warehouse}:${POSTGRES_PASSWORD:-warehouse}@${DB_HOST:-postgres}:5432/${POSTGRES_DB:-warehouse_db}
+    ports:
+      - "8082:8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  inventory-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_DIR: inventory-service
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8083
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-warehouse}:${POSTGRES_PASSWORD:-warehouse}@${DB_HOST:-postgres}:5432/${POSTGRES_DB:-warehouse_db}
+    ports:
+      - "8083:8083"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  supplier-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_DIR: supplier-service
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8084
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-warehouse}:${POSTGRES_PASSWORD:-warehouse}@${DB_HOST:-postgres}:5432/${POSTGRES_DB:-warehouse_db}
+    ports:
+      - "8084:8084"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  staff-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_DIR: staff-service
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8085
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-warehouse}:${POSTGRES_PASSWORD:-warehouse}@${DB_HOST:-postgres}:5432/${POSTGRES_DB:-warehouse_db}
+    ports:
+      - "8085:8085"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  equipment-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_DIR: equipment-service
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8086
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-warehouse}:${POSTGRES_PASSWORD:-warehouse}@${DB_HOST:-postgres}:5432/${POSTGRES_DB:-warehouse_db}
+    ports:
+      - "8086:8086"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_DIR: api-gateway
+    command: uvicorn main:app --host 0.0.0.0 --port 8080
+    environment:
+      CARGO_SERVICE_URL: http://cargo-service:8081
+      LOCATION_SERVICE_URL: http://location-service:8082
+      INVENTORY_SERVICE_URL: http://inventory-service:8083
+      SUPPLIER_SERVICE_URL: http://supplier-service:8084
+      STAFF_SERVICE_URL: http://staff-service:8085
+      EQUIPMENT_SERVICE_URL: http://equipment-service:8086
+    ports:
+      - "${API_GATEWAY_PORT:-8080}:8080"
+    depends_on:
+      cargo-service:
+        condition: service_started
+      location-service:
+        condition: service_started
+      inventory-service:
+        condition: service_started
+      supplier-service:
+        condition: service_started
+      staff-service:
+        condition: service_started
+      equipment-service:
+        condition: service_started
+
+volumes:
+  postgres_data:
