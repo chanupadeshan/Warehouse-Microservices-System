@@ -7,22 +7,30 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, EmailStr
+from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
-from .database import SessionLocal, engine
-from .models import Base, Staff
-
-Base.metadata.create_all(bind=engine)
+from .database import Base, engine, get_db
+from .models import Staff
 
 app = FastAPI(title="Staff Service", version="1.0.0")
 
 
-def get_db():
-	db = SessionLocal()
-	try:
-		yield db
-	finally:
-		db.close()
+@app.on_event("startup")
+def on_startup() -> None:
+	Base.metadata.create_all(bind=engine)
+	ensure_staff_schema()
+
+
+def ensure_staff_schema() -> None:
+	inspector = inspect(engine)
+	if not inspector.has_table("staff"):
+		return
+
+	column_names = {column["name"] for column in inspector.get_columns("staff")}
+	if "assigned_task" not in column_names:
+		with engine.begin() as connection:
+			connection.execute(text("ALTER TABLE staff ADD COLUMN assigned_task VARCHAR"))
 
 
 class StaffBase(BaseModel):
@@ -51,10 +59,17 @@ class StaffUpdate(BaseModel):
 
 class StaffResponse(StaffBase):
 	id: int
+	full_name: str
+	assigned_task: Optional[str] = None
 	created_at: datetime
 	updated_at: datetime
 
 	model_config = ConfigDict(from_attributes=True)
+
+
+class StaffAssignmentRequest(BaseModel):
+	role: str
+	assigned_task: str
 
 
 class ErrorDetail(BaseModel):
@@ -120,6 +135,11 @@ def health_check():
 	return build_success_response("Staff service is running")
 
 
+@app.get("/health")
+def health():
+	return {"status": "ok", "service": "staff-service"}
+
+
 @app.post(
 	"/staff",
 	response_model=SuccessResponse,
@@ -164,6 +184,31 @@ def get_staff(staff_id: int, db: Session = Depends(get_db)):
 	return build_success_response("Staff member fetched successfully", staff_data)
 
 
+@app.post("/staff/assign", response_model=StaffResponse)
+def assign_staff_member(payload: StaffAssignmentRequest, db: Session = Depends(get_db)):
+	staff_record = (
+		db.query(Staff)
+		.filter(
+			Staff.role == payload.role,
+			Staff.is_active.is_(True),
+			Staff.assigned_task.is_(None),
+		)
+		.order_by(Staff.id)
+		.with_for_update(skip_locked=True)
+		.first()
+	)
+	if not staff_record:
+		raise HTTPException(
+			status_code=status.HTTP_409_CONFLICT,
+			detail="No available staff member found",
+		)
+
+	staff_record.assigned_task = payload.assigned_task
+	db.commit()
+	db.refresh(staff_record)
+	return staff_record
+
+
 @app.put("/staff/{staff_id}", response_model=SuccessResponse)
 def update_staff(staff_id: int, staff_update: StaffUpdate, db: Session = Depends(get_db)):
 	staff_record = db.query(Staff).filter(Staff.id == staff_id).first()
@@ -194,6 +239,21 @@ def update_staff(staff_id: int, staff_update: StaffUpdate, db: Session = Depends
 	db.refresh(staff_record)
 	staff_data = StaffResponse.model_validate(staff_record).model_dump(mode="json")
 	return build_success_response("Staff member updated successfully", staff_data)
+
+
+@app.post("/staff/{staff_id}/release", response_model=StaffResponse)
+def release_staff_member(staff_id: int, db: Session = Depends(get_db)):
+	staff_record = db.query(Staff).filter(Staff.id == staff_id).first()
+	if not staff_record:
+		raise HTTPException(
+			status_code=status.HTTP_404_NOT_FOUND,
+			detail="Staff member not found",
+		)
+
+	staff_record.assigned_task = None
+	db.commit()
+	db.refresh(staff_record)
+	return staff_record
 
 
 @app.delete("/staff/{staff_id}", response_model=SuccessResponse)
