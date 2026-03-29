@@ -1,16 +1,31 @@
 FROM python:3.12-slim
 
 ARG SERVICE_DIR
+ARG PIP_INDEX_URL=https://pypi.org/simple
+ARG PIP_EXTRA_INDEX_URL
+ARG PIP_RETRIES=15
+ARG PIP_TIMEOUT=120
 
 ENV SERVICE_DIR=${SERVICE_DIR} \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /workspace
 
 COPY . /workspace
 
-RUN pip install --no-cache-dir -r /workspace/${SERVICE_DIR}/requirements.txt
+RUN set -eux; \
+    PIP_EXTRA_INDEX_URL_SAFE="${PIP_EXTRA_INDEX_URL:-}"; \
+    for attempt in 1 2 3; do \
+      if [ -n "${PIP_EXTRA_INDEX_URL_SAFE}" ]; then \
+        python -m pip install --no-cache-dir --retries "${PIP_RETRIES}" --timeout "${PIP_TIMEOUT}" --index-url "${PIP_INDEX_URL}" --extra-index-url "${PIP_EXTRA_INDEX_URL_SAFE}" -r "/workspace/${SERVICE_DIR}/requirements.txt" && break; \
+      else \
+        python -m pip install --no-cache-dir --retries "${PIP_RETRIES}" --timeout "${PIP_TIMEOUT}" --index-url "${PIP_INDEX_URL}" -r "/workspace/${SERVICE_DIR}/requirements.txt" && break; \
+      fi; \
+      if [ "${attempt}" -eq 3 ]; then exit 1; fi; \
+      sleep $((attempt * 5)); \
+    done
 
 WORKDIR /workspace/${SERVICE_DIR}
 
