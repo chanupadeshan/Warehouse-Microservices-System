@@ -16,6 +16,7 @@ class Staff(Base):
 	role = Column(String, nullable=False)
 	department = Column(String, nullable=False)
 	is_active = Column(Boolean, default=True, nullable=False)
+	assigned_task = Column(String, nullable=True)
 	created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 	updated_at = Column(
 		DateTime,
@@ -23,3 +24,7 @@ class Staff(Base):
 		onupdate=datetime.utcnow,
 		nullable=False,
 	)
+
+	@property
+	def full_name(self) -> str:
+		return f"{self.first_name} {self.last_name}"

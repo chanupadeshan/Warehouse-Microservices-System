@@ -3,7 +3,7 @@ services:
     image: ${POSTGRES_IMAGE:-postgres:16-alpine}
     container_name: warehouse-postgres
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-warehouse_db}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
       POSTGRES_USER: ${POSTGRES_USER:-warehouse}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-warehouse}
     ports:
@@ -14,11 +14,31 @@ services:
       test:
         [
           "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER:-warehouse} -d ${POSTGRES_DB:-warehouse_db}",
+          "pg_isready -U ${POSTGRES_USER:-warehouse} -d ${POSTGRES_DB:-postgres}",
         ]
       interval: 10s
       timeout: 5s
       retries: 5
+
+  postgres-init:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-warehouse}
+      POSTGRES_USER: ${POSTGRES_USER:-warehouse}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      DB_HOST: ${DB_HOST:-postgres}
+      CARGO_DB_NAME: ${CARGO_DB_NAME:-cargo_db}
+      LOCATION_DB_NAME: ${LOCATION_DB_NAME:-location_db}
+      INVENTORY_DB_NAME: ${INVENTORY_DB_NAME:-inventory_db}
+      SUPPLIER_DB_NAME: ${SUPPLIER_DB_NAME:-supplier_db}
+      STAFF_DB_NAME: ${STAFF_DB_NAME:-staff_db}
+      EQUIPMENT_DB_NAME: ${EQUIPMENT_DB_NAME:-equipment_db}
+    volumes:
+      - ./postgres-init:/scripts:ro
+    entrypoint: ["/bin/sh", "/scripts/create-service-databases.sh"]
 
   cargo-service:
     build:
@@ -28,7 +48,7 @@ services:
         SERVICE_DIR: cargo-service
     command: uvicorn app.main:app --host 0.0.0.0 --port 8081
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-warehouse}:${POSTGRES_PASSWORD:-warehouse}@${DB_HOST:-postgres}:5432/${POSTGRES_DB:-warehouse_db}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-warehouse}:${POSTGRES_PASSWORD:-warehouse}@${DB_HOST:-postgres}:5432/${CARGO_DB_NAME:-cargo_db}
       SUPPLIER_SERVICE_URL: ${SUPPLIER_SERVICE_URL:-http://supplier-service:8084}
       LOCATION_SERVICE_URL: ${LOCATION_SERVICE_URL:-http://location-service:8082}
       INVENTORY_SERVICE_URL: ${INVENTORY_SERVICE_URL:-http://inventory-service:8083}
@@ -38,8 +58,8 @@ services:
     ports:
       - "8081:8081"
     depends_on:
-      postgres:
-        condition: service_healthy
+      postgres-init:
+        condition: service_completed_successfully
 
   location-service:
     build:
@@ -49,12 +69,12 @@ services:
         SERVICE_DIR: location-service
     command: uvicorn app.main:app --host 0.0.0.0 --port 8082
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-warehouse}:${POSTGRES_PASSWORD:-warehouse}@${DB_HOST:-postgres}:5432/${POSTGRES_DB:-warehouse_db}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-warehouse}:${POSTGRES_PASSWORD:-warehouse}@${DB_HOST:-postgres}:5432/${LOCATION_DB_NAME:-location_db}
     ports:
       - "8082:8082"
     depends_on:
-      postgres:
-        condition: service_healthy
+      postgres-init:
+        condition: service_completed_successfully
 
   inventory-service:
     build:
@@ -64,12 +84,12 @@ services:
         SERVICE_DIR: inventory-service
     command: uvicorn app.main:app --host 0.0.0.0 --port 8083
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-warehouse}:${POSTGRES_PASSWORD:-warehouse}@${DB_HOST:-postgres}:5432/${POSTGRES_DB:-warehouse_db}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-warehouse}:${POSTGRES_PASSWORD:-warehouse}@${DB_HOST:-postgres}:5432/${INVENTORY_DB_NAME:-inventory_db}
     ports:
       - "8083:8083"
     depends_on:
-      postgres:
-        condition: service_healthy
+      postgres-init:
+        condition: service_completed_successfully
 
   supplier-service:
     build:
@@ -79,12 +99,12 @@ services:
         SERVICE_DIR: supplier-service
     command: uvicorn app.main:app --host 0.0.0.0 --port 8084
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-warehouse}:${POSTGRES_PASSWORD:-warehouse}@${DB_HOST:-postgres}:5432/${POSTGRES_DB:-warehouse_db}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-warehouse}:${POSTGRES_PASSWORD:-warehouse}@${DB_HOST:-postgres}:5432/${SUPPLIER_DB_NAME:-supplier_db}
     ports:
       - "8084:8084"
     depends_on:
-      postgres:
-        condition: service_healthy
+      postgres-init:
+        condition: service_completed_successfully
 
   staff-service:
     build:
@@ -94,12 +114,12 @@ services:
         SERVICE_DIR: staff-service
     command: uvicorn app.main:app --host 0.0.0.0 --port 8085
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-warehouse}:${POSTGRES_PASSWORD:-warehouse}@${DB_HOST:-postgres}:5432/${POSTGRES_DB:-warehouse_db}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-warehouse}:${POSTGRES_PASSWORD:-warehouse}@${DB_HOST:-postgres}:5432/${STAFF_DB_NAME:-staff_db}
     ports:
       - "8085:8085"
     depends_on:
-      postgres:
-        condition: service_healthy
+      postgres-init:
+        condition: service_completed_successfully
 
   equipment-service:
     build:
@@ -109,12 +129,12 @@ services:
         SERVICE_DIR: equipment-service
     command: uvicorn app.main:app --host 0.0.0.0 --port 8086
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-warehouse}:${POSTGRES_PASSWORD:-warehouse}@${DB_HOST:-postgres}:5432/${POSTGRES_DB:-warehouse_db}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-warehouse}:${POSTGRES_PASSWORD:-warehouse}@${DB_HOST:-postgres}:5432/${EQUIPMENT_DB_NAME:-equipment_db}
     ports:
       - "8086:8086"
     depends_on:
-      postgres:
-        condition: service_healthy
+      postgres-init:
+        condition: service_completed_successfully
 
   api-gateway:
     build:

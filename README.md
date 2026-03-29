@@ -1,5 +1,25 @@
 # Microservice-fastapi
 
+## Database Layout
+
+The stack uses one PostgreSQL container, but each service gets its own database:
+
+- `cargo-service` -> `cargo_db`
+- `location-service` -> `location_db`
+- `inventory-service` -> `inventory_db`
+- `supplier-service` -> `supplier_db`
+- `staff-service` -> `staff_db`
+- `equipment-service` -> `equipment_db`
+
+`docker compose` starts a short-lived `postgres-init` container that creates any missing service databases before the application containers start.
+
+## Running The Stack
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
 ## Folder Structure
 
 ```text

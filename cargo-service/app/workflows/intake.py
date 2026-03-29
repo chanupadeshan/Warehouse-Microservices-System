@@ -73,6 +73,16 @@ async def assign_staff(
     )
 
 
+def staff_display_name(staff_member: dict[str, object]) -> str:
+    full_name = staff_member.get("full_name")
+    if isinstance(full_name, str) and full_name.strip():
+        return full_name
+
+    first_name = str(staff_member.get("first_name", "")).strip()
+    last_name = str(staff_member.get("last_name", "")).strip()
+    return " ".join(part for part in (first_name, last_name) if part)
+
+
 async def assign_equipment(
     client: httpx.AsyncClient,
     payload: CargoIntakeRequest,
@@ -172,7 +182,7 @@ async def run_shipment_intake_workflow(
                     else "Pending Inventory Update"
                 ),
                 assigned_staff_id=progress.staff_member["id"],
-                assigned_staff_name=progress.staff_member["full_name"],
+                assigned_staff_name=staff_display_name(progress.staff_member),
             )
 
             if payload.weight_kg >= HEAVY_CARGO_THRESHOLD_KG:
