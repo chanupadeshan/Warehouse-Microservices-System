@@ -1,7 +1,11 @@
 from datetime import datetime
+from http import HTTPStatus
 from typing import Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, EmailStr
 from sqlalchemy.orm import Session
 
@@ -53,14 +57,72 @@ class StaffResponse(StaffBase):
 	model_config = ConfigDict(from_attributes=True)
 
 
-@app.get("/")
+class ErrorDetail(BaseModel):
+	code: str
+	title: str
+	detail: str
+
+
+class SuccessResponse(BaseModel):
+	success: bool = True
+	message: str
+	data: object | None = None
+
+
+class ErrorResponse(BaseModel):
+	success: bool = False
+	message: str
+	error: ErrorDetail
+
+
+def build_success_response(message: str, data: object | None = None, status_code: int = status.HTTP_200_OK):
+	payload = {
+		"success": True,
+		"message": message,
+		"data": data,
+	}
+	return JSONResponse(status_code=status_code, content=jsonable_encoder(payload))
+
+
+def build_error_response(status_code: int, message: str, detail: str):
+	title = HTTPStatus(status_code).phrase
+	payload = {
+		"success": False,
+		"message": message,
+		"error": {
+			"code": str(status_code),
+			"title": title,
+			"detail": detail,
+		},
+	}
+	return JSONResponse(status_code=status_code, content=payload)
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(_: Request, exc: HTTPException):
+	detail = exc.detail if isinstance(exc.detail, str) else "Request failed"
+	return build_error_response(exc.status_code, detail, detail)
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(_: Request, exc: RequestValidationError):
+	validation_errors = []
+	for err in exc.errors():
+		location = ".".join(str(part) for part in err.get("loc", []))
+		validation_errors.append(f"{location}: {err.get('msg', 'Invalid value')}")
+
+	detail = "; ".join(validation_errors) if validation_errors else "Request validation failed"
+	return build_error_response(status.HTTP_422_UNPROCESSABLE_ENTITY, "Validation error", detail)
+
+
+@app.get("/", response_model=SuccessResponse)
 def health_check():
-	return {"message": "Staff service is running"}
+	return build_success_response("Staff service is running")
 
 
 @app.post(
 	"/staff",
-	response_model=StaffResponse,
+	response_model=SuccessResponse,
 	status_code=status.HTTP_201_CREATED,
 )
 def create_staff(staff: StaffCreate, db: Session = Depends(get_db)):
@@ -75,19 +137,22 @@ def create_staff(staff: StaffCreate, db: Session = Depends(get_db)):
 	db.add(staff_record)
 	db.commit()
 	db.refresh(staff_record)
-	return staff_record
+	staff_data = StaffResponse.model_validate(staff_record).model_dump(mode="json")
+	return build_success_response("Staff member created successfully", staff_data, status.HTTP_201_CREATED)
 
 
-@app.get("/staff", response_model=list[StaffResponse])
+@app.get("/staff", response_model=SuccessResponse)
 def get_all_staff(
 	skip: int = Query(default=0, ge=0),
 	limit: int = Query(default=100, ge=1, le=500),
 	db: Session = Depends(get_db),
 ):
-	return db.query(Staff).offset(skip).limit(limit).all()
+	staff_records = db.query(Staff).offset(skip).limit(limit).all()
+	staff_data = [StaffResponse.model_validate(staff).model_dump(mode="json") for staff in staff_records]
+	return build_success_response("Staff members fetched successfully", staff_data)
 
 
-@app.get("/staff/{staff_id}", response_model=StaffResponse)
+@app.get("/staff/{staff_id}", response_model=SuccessResponse)
 def get_staff(staff_id: int, db: Session = Depends(get_db)):
 	staff_record = db.query(Staff).filter(Staff.id == staff_id).first()
 	if not staff_record:
@@ -95,10 +160,11 @@ def get_staff(staff_id: int, db: Session = Depends(get_db)):
 			status_code=status.HTTP_404_NOT_FOUND,
 			detail="Staff member not found",
 		)
-	return staff_record
+	staff_data = StaffResponse.model_validate(staff_record).model_dump(mode="json")
+	return build_success_response("Staff member fetched successfully", staff_data)
 
 
-@app.put("/staff/{staff_id}", response_model=StaffResponse)
+@app.put("/staff/{staff_id}", response_model=SuccessResponse)
 def update_staff(staff_id: int, staff_update: StaffUpdate, db: Session = Depends(get_db)):
 	staff_record = db.query(Staff).filter(Staff.id == staff_id).first()
 	if not staff_record:
@@ -126,10 +192,11 @@ def update_staff(staff_id: int, staff_update: StaffUpdate, db: Session = Depends
 
 	db.commit()
 	db.refresh(staff_record)
-	return staff_record
+	staff_data = StaffResponse.model_validate(staff_record).model_dump(mode="json")
+	return build_success_response("Staff member updated successfully", staff_data)
 
 
-@app.delete("/staff/{staff_id}", status_code=status.HTTP_204_NO_CONTENT)
+@app.delete("/staff/{staff_id}", response_model=SuccessResponse)
 def delete_staff(staff_id: int, db: Session = Depends(get_db)):
 	staff_record = db.query(Staff).filter(Staff.id == staff_id).first()
 	if not staff_record:
@@ -140,4 +207,4 @@ def delete_staff(staff_id: int, db: Session = Depends(get_db)):
 
 	db.delete(staff_record)
 	db.commit()
-	return None
+	return build_success_response("Staff member deleted successfully")
