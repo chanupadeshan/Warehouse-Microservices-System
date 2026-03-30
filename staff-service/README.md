@@ -1,11 +1,11 @@
-# Staff Service (FastAPI + SQLite)
+# Staff Service (FastAPI + PostgreSQL)
 
 This microservice manages warehouse staff records with full CRUD operations.
 
 ## Tech Stack
 
 - FastAPI
-- SQLite
+- PostgreSQL
 - SQLAlchemy
 
 ## Run Locally
@@ -25,17 +25,21 @@ uvicorn app.main:app --reload --port 8085
 
 ## API Endpoints
 
+- `GET /` - Service status
+- `GET /health` - Health check
 - `POST /staff` - Create a staff member
 - `GET /staff` - List all staff members
 - `GET /staff/{staff_id}` - Get one staff member
+- `POST /staff/assign` - Assign available staff member to a task
 - `PUT /staff/{staff_id}` - Update a staff member
+- `POST /staff/{staff_id}/release` - Release assigned task from a staff member
 - `DELETE /staff/{staff_id}` - Delete a staff member
 
 ## Sample Create Payload
 
 ```json
 {
-	"first_name": "Nimal",
+	"first_name": "Nimal",ZX
 	"last_name": "Perera",
 	"email": "nimal.perera@warehouse.com",
 	"phone": "+94-77-123-4567",
