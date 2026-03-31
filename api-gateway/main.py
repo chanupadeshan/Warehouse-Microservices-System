@@ -10,15 +10,15 @@ SERVICE_CONFIG = {
         "service_url": os.getenv("CARGO_SERVICE_URL", "http://localhost:8081"),
         "resource_path": "/cargo",
     },
-    "location": {
+    "locations": {
         "service_url": os.getenv("LOCATION_SERVICE_URL", "http://localhost:8082"),
         "resource_path": "/locations",
     },
-    "inventory": {
+    "inventory-items": {
         "service_url": os.getenv("INVENTORY_SERVICE_URL", "http://localhost:8083"),
         "resource_path": "/inventory-items",
     },
-    "supplier": {
+    "suppliers": {
         "service_url": os.getenv("SUPPLIER_SERVICE_URL", "http://localhost:8084"),
         "resource_path": "/suppliers",
     },
