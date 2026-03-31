@@ -2,6 +2,7 @@ import os
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import Response
 
 SERVICE_CONFIG = {
@@ -68,6 +69,50 @@ async def health() -> dict[str, object]:
     overall = "healthy" if all(item["status"] == "up" for item in results.values()) else "degraded"
     return {"gateway": "healthy", "overall": overall, "services": results}
 
+# --- NEW:
+@app.get("/services/docs")
+async def docs_index() -> dict[str, object]:
+    return {
+        "gateway_docs": "/docs",
+        "service_docs_via_gateway": {
+            name: f"/{name}/docs" for name in SERVICE_CONFIG
+        },
+        "service_openapi_via_gateway": {
+            name: f"/{name}/openapi.json" for name in SERVICE_CONFIG
+        },
+    }
+
+
+@app.get("/{service}/docs", include_in_schema=False)
+async def service_docs_via_gateway(service: str):
+    if service not in SERVICE_CONFIG:
+        raise HTTPException(status_code=404, detail=f"Unknown service '{service}'.")
+
+    return get_swagger_ui_html(
+        openapi_url=f"/{service}/openapi.json",
+        title=f"{service.title()} Service Docs (via Gateway)",
+    )
+
+
+@app.get("/{service}/openapi.json", include_in_schema=False)
+async def service_openapi_via_gateway(service: str) -> Response:
+    config = SERVICE_CONFIG.get(service)
+    if config is None:
+        raise HTTPException(status_code=404, detail=f"Unknown service '{service}'.")
+
+    target_url = f"{config['service_url'].rstrip('/')}/openapi.json"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            upstream = await client.get(target_url)
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=502, detail=f"{service} service unavailable: {exc}") from exc
+
+    return Response(
+        content=upstream.content,
+        status_code=upstream.status_code,
+        media_type=upstream.headers.get("content-type", "application/json"),
+    )
+# --- END NEW ---
 
 async def forward_request(service: str, path: str, request: Request) -> Response:
     config = SERVICE_CONFIG.get(service)
