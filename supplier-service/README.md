@@ -1,6 +1,6 @@
 # Supplier Microservice
 
-- **Port:** 8086  <!-- Update if your port is different -->
+- **Port:** 8085
 - **Technology:** Python + FastAPI + SQLite
 - **Purpose:** Supplier management and procurement coordination
 
