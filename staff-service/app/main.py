@@ -6,7 +6,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
@@ -34,13 +34,20 @@ def ensure_staff_schema() -> None:
 
 
 class StaffBase(BaseModel):
-	first_name: str
-	last_name: str
+	first_name: str = Field(..., min_length=1)
+	last_name: str = Field(..., min_length=1)
 	email: EmailStr
 	phone: Optional[str] = None
-	role: str
-	department: str
+	role: str = Field(..., min_length=1)
+	department: str = Field(..., min_length=1)
 	is_active: bool = True
+
+	@field_validator("first_name", "last_name", "role", "department")
+	@classmethod
+	def non_blank_required_fields(cls, value: str) -> str:
+		if not value.strip():
+			raise ValueError("must not be blank")
+		return value
 
 
 class StaffCreate(StaffBase):
@@ -48,13 +55,22 @@ class StaffCreate(StaffBase):
 
 
 class StaffUpdate(BaseModel):
-	first_name: Optional[str] = None
-	last_name: Optional[str] = None
+	first_name: Optional[str] = Field(default=None, min_length=1)
+	last_name: Optional[str] = Field(default=None, min_length=1)
 	email: Optional[EmailStr] = None
 	phone: Optional[str] = None
-	role: Optional[str] = None
-	department: Optional[str] = None
+	role: Optional[str] = Field(default=None, min_length=1)
+	department: Optional[str] = Field(default=None, min_length=1)
 	is_active: Optional[bool] = None
+
+	@field_validator("first_name", "last_name", "role", "department")
+	@classmethod
+	def non_blank_optional_fields(cls, value: Optional[str]) -> Optional[str]:
+		if value is None:
+			return value
+		if not value.strip():
+			raise ValueError("must not be blank")
+		return value
 
 
 class StaffResponse(StaffBase):
@@ -121,10 +137,28 @@ async def http_exception_handler(_: Request, exc: HTTPException):
 
 @app.exception_handler(RequestValidationError)
 async def request_validation_exception_handler(_: Request, exc: RequestValidationError):
-	validation_errors = []
+	missing_fields: list[str] = []
+	validation_errors: list[str] = []
 	for err in exc.errors():
-		location = ".".join(str(part) for part in err.get("loc", []))
+		location_parts = [str(part) for part in err.get("loc", [])]
+		error_type = err.get("type", "")
+		error_msg = str(err.get("msg", "")).lower()
+
+		if "missing" in error_type or error_msg == "field required":
+			field_name = ".".join(location_parts[1:]) if location_parts and location_parts[0] == "body" else ".".join(location_parts)
+			missing_label = field_name or "request body"
+			if missing_label not in missing_fields:
+				missing_fields.append(missing_label)
+			continue
+
+		location = ".".join(location_parts)
 		validation_errors.append(f"{location}: {err.get('msg', 'Invalid value')}")
+
+	if missing_fields:
+		if len(missing_fields) == 1:
+			validation_errors.insert(0, f"Missing required field: {missing_fields[0]}")
+		else:
+			validation_errors.insert(0, f"Missing required fields: {', '.join(missing_fields)}")
 
 	detail = "; ".join(validation_errors) if validation_errors else "Request validation failed"
 	return build_error_response(status.HTTP_422_UNPROCESSABLE_ENTITY, "Validation error", detail)
@@ -219,6 +253,14 @@ def update_staff(staff_id: int, staff_update: StaffUpdate, db: Session = Depends
 		)
 
 	update_data = staff_update.model_dump(exclude_unset=True)
+	if not update_data:
+		raise HTTPException(
+			status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+			detail=(
+				"Missing required fields for update. Provide at least one of: "
+				"first_name, last_name, email, phone, role, department, is_active"
+			),
+		)
 
 	if "email" in update_data:
 		existing_staff = (
